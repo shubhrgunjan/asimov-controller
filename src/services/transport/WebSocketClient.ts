@@ -5,10 +5,13 @@
 
 import { ConnectionState } from '../../types/connection';
 import { CommandAck } from '../../types/controller';
+import { RobotTelemetry } from '../../types/telemetry';
+import { BinaryProtocol } from './BinaryProtocol';
 
 export type FrameListener = (rawFrame: Record<string, unknown>) => void;
 export type StatusListener = (state: ConnectionState, message?: string) => void;
 export type AckListener = (ack: CommandAck) => void;
+export type BinaryTelemetryListener = (telemetry: RobotTelemetry) => void;
 
 export class WebSocketClient {
   private host: string;
@@ -24,6 +27,7 @@ export class WebSocketClient {
   private frameListeners: Set<FrameListener> = new Set();
   private statusListeners: Set<StatusListener> = new Set();
   private ackListeners: Set<AckListener> = new Set();
+  private binaryTelemetryListeners: Set<BinaryTelemetryListener> = new Set();
 
   constructor(
     host: string = '10.0.2.2',
@@ -67,6 +71,7 @@ export class WebSocketClient {
 
     try {
       this.ws = new WebSocket(url);
+      this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         this.clearReconnectTimer();
@@ -75,6 +80,15 @@ export class WebSocketClient {
 
       this.ws.onmessage = (event: MessageEvent) => {
         try {
+          if (event.data instanceof ArrayBuffer) {
+            const u8 = new Uint8Array(event.data);
+            const unpacked = BinaryProtocol.unpackTelemetry(u8);
+            if (unpacked) {
+              this.notifyBinaryTelemetry(unpacked.telemetry);
+              return;
+            }
+          }
+
           const data = JSON.parse(event.data as string);
           if (data.type === 'ack' && data.ack) {
             this.notifyAck(data.ack);
@@ -140,9 +154,27 @@ export class WebSocketClient {
     }
   }
 
+  public sendBinary(data: Uint8Array): boolean {
+    if (!this.isConnected() || !this.ws) {
+      return false;
+    }
+
+    try {
+      this.ws.send(data.buffer as ArrayBuffer);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   public onFrame(listener: FrameListener): () => void {
     this.frameListeners.add(listener);
     return () => this.frameListeners.delete(listener);
+  }
+
+  public onBinaryTelemetry(listener: BinaryTelemetryListener): () => void {
+    this.binaryTelemetryListeners.add(listener);
+    return () => this.binaryTelemetryListeners.delete(listener);
   }
 
   public onStatus(listener: StatusListener): () => void {
@@ -153,6 +185,16 @@ export class WebSocketClient {
   public onAck(listener: AckListener): () => void {
     this.ackListeners.add(listener);
     return () => this.ackListeners.delete(listener);
+  }
+
+  private notifyBinaryTelemetry(telemetry: RobotTelemetry): void {
+    for (const listener of this.binaryTelemetryListeners) {
+      try {
+        listener(telemetry);
+      } catch {
+        // Protect loop
+      }
+    }
   }
 
   private setState(newState: ConnectionState, message?: string): void {

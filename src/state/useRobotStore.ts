@@ -7,15 +7,30 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { RobotController } from '../services/controller/RobotController';
 import { TelemetryService } from '../services/telemetry/TelemetryService';
 import { RobotTelemetry } from '../types/telemetry';
-import { ConnectionState, ConnectionConfig } from '../types/connection';
+import { ConnectionState, ConnectionConfig, TransportMode, LatencyMode, WebRTCStats } from '../types/connection';
 import { CameraMode } from '../types/camera';
 import { CommandAck } from '../types/controller';
 import { DEFAULT_CONNECTION_CONFIG } from '../config';
 import { mapJoystickToVelocity, mapTwinStickToVelocity } from '../utils/math';
 
+const INITIAL_WEBRTC_STATS: WebRTCStats = {
+  fps: 0,
+  bitrateKbps: 0,
+  rttMs: 0,
+  packetLoss: 0,
+  jitterMs: 0,
+  width: 0,
+  height: 0,
+  droppedFrames: 0,
+  mode: 'LOW_LATENCY',
+};
+
 export function useRobotStore() {
   const [config, setConfig] = useState<ConnectionConfig>(DEFAULT_CONNECTION_CONFIG);
   const [connectionState, setConnectionState] = useState<ConnectionState>('DISCONNECTED');
+  const [transportMode, setTransportMode] = useState<TransportMode>('WEBRTC');
+  const [latencyMode, setLatencyMode] = useState<LatencyMode>('LOW_LATENCY');
+  const [webrtcStats, setWebrtcStats] = useState<WebRTCStats>(INITIAL_WEBRTC_STATS);
   const [telemetry, setTelemetry] = useState<RobotTelemetry>(TelemetryService.getInitialTelemetry());
   const [cameraMode, setCameraMode] = useState<CameraMode>('THIRD');
   const [lastAck, setLastAck] = useState<CommandAck | null>(null);
@@ -50,10 +65,22 @@ export function useRobotStore() {
       }
     });
 
-    // 2. Subscribe to incoming telemetry frames
+    // 2. Subscribe to incoming telemetry frames (JSON fallback)
     const unsubFrame = controller.wsClient.onFrame((rawFrame) => {
       const parsed = TelemetryService.parseFrame(rawFrame);
       setTelemetry(parsed);
+
+      const now = Date.now();
+      const delta = now - lastFrameTimeRef.current;
+      lastFrameTimeRef.current = now;
+      if (delta > 0 && delta < 1000) {
+        setLatencyMs(delta);
+      }
+    });
+
+    // 2b. Subscribe to incoming binary telemetry frames (0 JSON parsing overhead)
+    const unsubBinFrame = controller.wsClient.onBinaryTelemetry((binTelemetry) => {
+      setTelemetry(binTelemetry);
 
       const now = Date.now();
       const delta = now - lastFrameTimeRef.current;
@@ -82,6 +109,7 @@ export function useRobotStore() {
     return () => {
       unsubStatus();
       unsubFrame();
+      unsubBinFrame();
       unsubAck();
       unsubCam();
     };
@@ -158,13 +186,44 @@ export function useRobotStore() {
   }, [controller]);
 
   // Viewport URL helper
-  const getCameraSnapshotUrl = useCallback((cacheBuster: number) => {
-    return controller.cameraService.getSnapshotUrl(cacheBuster);
-  }, [controller]);
+  const getCameraSnapshotUrl = useCallback(
+    (cacheBuster: number) => {
+      return controller.cameraService.getSnapshotUrl(cacheBuster);
+    },
+    [controller]
+  );
+
+  // WebRTC & Teleoperation Callbacks
+  const handleBinaryTelemetry = useCallback((t: RobotTelemetry) => {
+    setTelemetry(t);
+    const now = Date.now();
+    const delta = now - lastFrameTimeRef.current;
+    lastFrameTimeRef.current = now;
+    if (delta > 0 && delta < 1000) {
+      setLatencyMs(delta);
+    }
+  }, []);
+
+  const handleWebRTCStats = useCallback((stats: WebRTCStats) => {
+    setWebrtcStats(stats);
+    if (stats.rttMs > 0) {
+      setLatencyMs(stats.rttMs);
+    }
+  }, []);
+
+  const setBinarySender = useCallback(
+    (sender: ((bytes: Uint8Array) => boolean) | null) => {
+      controller.setBinarySender(sender);
+    },
+    [controller]
+  );
 
   return {
     config,
     connectionState,
+    transportMode,
+    latencyMode,
+    webrtcStats,
     telemetry,
     cameraMode,
     lastAck,
@@ -172,6 +231,8 @@ export function useRobotStore() {
     latencyMs,
     speedMultiplier,
     commandedVelocity,
+    setTransportMode,
+    setLatencyMode,
     setSpeedMultiplier,
     connect,
     disconnect,
@@ -185,5 +246,8 @@ export function useRobotStore() {
     setTwinStickPosition,
     switchCamera,
     getCameraSnapshotUrl,
+    handleBinaryTelemetry,
+    handleWebRTCStats,
+    setBinarySender,
   };
 }

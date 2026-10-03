@@ -15,9 +15,11 @@ import {
   StatusBar,
 } from 'react-native';
 import { useRobotStore } from '../state/useRobotStore';
-import { RobotViewport } from '../components/RobotViewport/RobotViewport';
+import { RobotViewport, RobotViewportRef } from '../components/RobotViewport/RobotViewport';
 import { VirtualJoystick } from '../components/VirtualJoystick/VirtualJoystick';
+import { DebugNetworkModal } from '../components/DebugModal/DebugNetworkModal';
 import { CameraMode, CAMERA_DEFINITIONS } from '../types/camera';
+import { TransportMode, LatencyMode } from '../types/connection';
 import { formatSimTime } from '../utils/formatting';
 
 export interface ControllerScreenProps {
@@ -32,6 +34,9 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
   const {
     config,
     connectionState,
+    transportMode,
+    latencyMode,
+    webrtcStats,
     telemetry,
     cameraMode,
     lastAck,
@@ -39,7 +44,10 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
     latencyMs,
     speedMultiplier,
     commandedVelocity,
+    setTransportMode,
+    setLatencyMode,
     setSpeedMultiplier,
+    connect,
     disconnect,
     stand,
     damp,
@@ -50,13 +58,30 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
     setTwinStickPosition,
     switchCamera,
     getCameraSnapshotUrl,
+    handleBinaryTelemetry,
+    handleWebRTCStats,
+    setBinarySender,
   } = store;
 
   const [activeActionLoading, setActiveActionLoading] = useState<string | null>(null);
+  const [isDebugModalVisible, setIsDebugModalVisible] = useState<boolean>(false);
+  const viewportRef = useRef<RobotViewportRef>(null);
 
   // Twin-stick touch tracking references for simultaneous 2-thumb input
   const leftStick = useRef({ x: 0, y: 0 });
   const rightStick = useRef({ x: 0, y: 0 });
+
+  // Hook WebRTC DataChannel binary sender to store
+  React.useEffect(() => {
+    if (transportMode === 'WEBRTC') {
+      setBinarySender((bytes) => {
+        viewportRef.current?.sendCommandBinary?.(bytes);
+        return true;
+      });
+    } else {
+      setBinarySender(null);
+    }
+  }, [transportMode, setBinarySender]);
 
   const handleLeftMove = (x: number, y: number) => {
     leftStick.current = { x, y };
@@ -105,17 +130,25 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
     <View style={styles.container}>
       {/* 1. IMMERSIVE FULL-SCREEN CAMERA BACKGROUND */}
       <RobotViewport
+        ref={viewportRef}
         connected={isConnected}
         cameraMode={cameraMode}
         simTime={telemetry.simTime}
         getSnapshotUrl={getCameraSnapshotUrl}
+        host={config.host}
+        httpPort={config.httpPort}
+        transportMode={transportMode}
+        latencyMode={latencyMode}
         fullScreen={true}
         showHudOverlay={false}
+        onWebRTCStats={handleWebRTCStats}
+        onBinaryTelemetry={handleBinaryTelemetry}
+        onTransportFallback={() => setTransportMode('LEGACY')}
       />
 
       {/* 2. TOP FLOATING GLASSMORPHISM HUD */}
       <View style={styles.topHudBar}>
-        {/* Left: Settings & Connection Status */}
+        {/* Left: Settings, Connection & Diagnostics */}
         <View style={styles.topLeftGroup}>
           <TouchableOpacity
             style={styles.settingsIconButton}
@@ -136,9 +169,28 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
               {config.host}
             </Text>
             {isConnected && (
-              <Text style={styles.connPingText}>{latencyMs > 0 ? `${latencyMs}ms` : '25Hz'}</Text>
+              <Text style={styles.connPingText}>{latencyMs > 0 ? `${latencyMs}ms` : '30Hz'}</Text>
             )}
           </View>
+
+          {/* Realtime Engineering Telemetry Diagnostic Pill */}
+          <TouchableOpacity
+            style={styles.diagPill}
+            activeOpacity={0.7}
+            onPress={() => setIsDebugModalVisible(true)}
+          >
+            <View
+              style={[
+                styles.diagDot,
+                { backgroundColor: transportMode === 'WEBRTC' ? '#00e5ff' : '#ffb300' },
+              ]}
+            />
+            <Text style={styles.diagText}>
+              {transportMode === 'WEBRTC'
+                ? `${webrtcStats.fps || 60}FPS H.264`
+                : 'LEGACY 25FPS'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Center: Live Telemetry Badges */}
@@ -410,6 +462,27 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
           </View>
         </View>
       </View>
+
+      {/* 4. ENGINEERING DIAGNOSTICS & NETWORK MODAL */}
+      <DebugNetworkModal
+        visible={isDebugModalVisible}
+        onClose={() => setIsDebugModalVisible(false)}
+        connectionState={connectionState}
+        transportMode={transportMode}
+        latencyMode={latencyMode}
+        webrtcStats={webrtcStats}
+        telemetry={telemetry}
+        host={config.host}
+        httpPort={config.httpPort}
+        wsPort={config.wsPort}
+        onToggleTransport={() => {
+          setTransportMode(transportMode === 'WEBRTC' ? 'LEGACY' : 'WEBRTC');
+        }}
+        onChangeLatencyMode={setLatencyMode}
+        onForceReconnect={() => {
+          disconnect().then(() => connect());
+        }}
+      />
     </View>
   );
 };
@@ -419,6 +492,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#05070c',
     position: 'relative',
+  },
+
+  diagPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#070b14',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.35)',
+    gap: 6,
+  },
+  diagDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  diagText: {
+    color: '#00e5ff',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    letterSpacing: 0.5,
   },
 
   /* ── TOP HUD ── */

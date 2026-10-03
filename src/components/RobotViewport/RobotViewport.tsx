@@ -4,29 +4,65 @@
  * Eliminates frame flickering, black blinks, and network request thrashing.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { View, Text, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { CameraMode, CAMERA_DEFINITIONS } from '../../types/camera';
+import { TransportMode, LatencyMode, WebRTCStats } from '../../types/connection';
+import { RobotTelemetry } from '../../types/telemetry';
+import { CommandAck } from '../../types/controller';
 import { formatSimTime } from '../../utils/formatting';
+import { WebRTCViewport, WebRTCViewportRef } from './WebRTCViewport';
 
 export interface RobotViewportProps {
   connected: boolean;
   cameraMode: CameraMode;
   simTime: number;
   getSnapshotUrl: (cacheBuster: number) => string;
+  host?: string;
+  httpPort?: number;
+  transportMode?: TransportMode;
+  latencyMode?: LatencyMode;
   fullScreen?: boolean;
   showHudOverlay?: boolean;
+  onWebRTCStats?: (stats: WebRTCStats) => void;
+  onBinaryTelemetry?: (telemetry: RobotTelemetry) => void;
+  onAck?: (ack: CommandAck) => void;
+  onTransportFallback?: () => void;
 }
 
-export const RobotViewport: React.FC<RobotViewportProps> = ({
+export interface RobotViewportRef {
+  sendCommandBinary?: (bytes: Uint8Array | number[]) => void;
+  switchCamera?: (simCameraName: string) => void;
+}
+
+export const RobotViewport = forwardRef<RobotViewportRef, RobotViewportProps>(({
   connected,
   cameraMode,
   simTime,
   getSnapshotUrl,
+  host = '10.0.2.2',
+  httpPort = 8852,
+  transportMode = 'WEBRTC',
+  latencyMode = 'LOW_LATENCY',
   fullScreen = true,
   showHudOverlay = false,
-}) => {
-  // Double-buffering: two permanent Image layers
+  onWebRTCStats,
+  onBinaryTelemetry,
+  onAck,
+  onTransportFallback,
+}, ref) => {
+  const webRtcRef = useRef<WebRTCViewportRef>(null);
+
+  useImperativeHandle(ref, () => ({
+    sendCommandBinary: (bytes) => {
+      webRtcRef.current?.sendCommandBinary(bytes);
+    },
+    switchCamera: (simCameraName) => {
+      webRtcRef.current?.switchCamera(simCameraName);
+    },
+  }));
+
+  // Double-buffering: two permanent Image layers for LEGACY fallback mode
   const [frameA, setFrameA] = useState<string>('');
   const [frameB, setFrameB] = useState<string>('');
   const [activeLayer, setActiveLayer] = useState<'A' | 'B'>('A');
@@ -159,11 +195,11 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
     };
   }, []);
 
-  // Primary lifecycle loop
+  // Primary lifecycle loop for LEGACY fallback mode
   useEffect(() => {
     isMountedRef.current = true;
 
-    if (!connected) {
+    if (!connected || transportMode !== 'LEGACY') {
       setHasReceivedFirstFrame(false);
       clearAllTimers();
       setFrameA('');
@@ -180,60 +216,80 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
       isMountedRef.current = false;
       clearAllTimers();
     };
-  }, [connected, cameraMode, getSnapshotUrl, clearAllTimers]);
+  }, [connected, cameraMode, getSnapshotUrl, transportMode, clearAllTimers]);
 
   return (
     <View style={[styles.wrapper, fullScreen ? styles.wrapperFullScreen : styles.wrapperInline]}>
-      {/* Layer A (Double-Buffered Image Slot 1) */}
-      {frameA ? (
-        <Image
-          source={{ uri: frameA }}
-          style={[
-            styles.imageLayer,
-            {
-              opacity: activeLayer === 'A' && hasReceivedFirstFrame ? 1 : 0,
-              zIndex: activeLayer === 'A' ? 2 : 1,
-            },
-          ]}
-          resizeMode={fullScreen ? 'cover' : 'contain'}
-          fadeDuration={0}
-          onLoad={handleLoadA}
-          onError={handleErrorA}
+      {transportMode === 'WEBRTC' ? (
+        <WebRTCViewport
+          ref={webRtcRef}
+          host={host}
+          httpPort={httpPort}
+          cameraMode={cameraMode}
+          connected={connected}
+          latencyMode={latencyMode}
+          onStatsChange={onWebRTCStats}
+          onBinaryTelemetry={onBinaryTelemetry}
+          onAck={onAck}
+          onError={(err) => {
+            console.warn('[RobotViewport] WebRTC error:', err);
+            onTransportFallback?.();
+          }}
         />
-      ) : null}
+      ) : (
+        <>
+          {/* Layer A (Double-Buffered Image Slot 1) */}
+          {frameA ? (
+            <Image
+              source={{ uri: frameA }}
+              style={[
+                styles.imageLayer,
+                {
+                  opacity: activeLayer === 'A' && hasReceivedFirstFrame ? 1 : 0,
+                  zIndex: activeLayer === 'A' ? 2 : 1,
+                },
+              ]}
+              resizeMode={fullScreen ? 'cover' : 'contain'}
+              fadeDuration={0}
+              onLoad={handleLoadA}
+              onError={handleErrorA}
+            />
+          ) : null}
 
-      {/* Layer B (Double-Buffered Image Slot 2) */}
-      {frameB ? (
-        <Image
-          source={{ uri: frameB }}
-          style={[
-            styles.imageLayer,
-            {
-              opacity: activeLayer === 'B' && hasReceivedFirstFrame ? 1 : 0,
-              zIndex: activeLayer === 'B' ? 2 : 1,
-            },
-          ]}
-          resizeMode={fullScreen ? 'cover' : 'contain'}
-          fadeDuration={0}
-          onLoad={handleLoadB}
-          onError={handleErrorB}
-        />
-      ) : null}
+          {/* Layer B (Double-Buffered Image Slot 2) */}
+          {frameB ? (
+            <Image
+              source={{ uri: frameB }}
+              style={[
+                styles.imageLayer,
+                {
+                  opacity: activeLayer === 'B' && hasReceivedFirstFrame ? 1 : 0,
+                  zIndex: activeLayer === 'B' ? 2 : 1,
+                },
+              ]}
+              resizeMode={fullScreen ? 'cover' : 'contain'}
+              fadeDuration={0}
+              onLoad={handleLoadB}
+              onError={handleErrorB}
+            />
+          ) : null}
 
-      {/* Loading or Disconnected Placeholder */}
-      {(!connected || !hasReceivedFirstFrame) && (
-        <View style={styles.standbyContainer}>
-          <Text style={styles.standbyIcon}>🤖</Text>
-          <Text style={styles.standbyTitle}>
-            {connected ? 'Acquiring Simulation Camera Feed...' : 'Virtual Asimov Offline'}
-          </Text>
-          <Text style={styles.standbySub}>
-            {connected
-              ? `Streaming 3D perspective from ${camDef.displayName}`
-              : 'Start Virtual Asimov with ./run_sim.sh --web'}
-          </Text>
-          {connected && <ActivityIndicator color="#00e5ff" size="large" style={{ marginTop: 14 }} />}
-        </View>
+          {/* Loading or Disconnected Placeholder */}
+          {(!connected || !hasReceivedFirstFrame) && (
+            <View style={styles.standbyContainer}>
+              <Text style={styles.standbyIcon}>🤖</Text>
+              <Text style={styles.standbyTitle}>
+                {connected ? 'Acquiring Simulation Camera Feed...' : 'Virtual Asimov Offline'}
+              </Text>
+              <Text style={styles.standbySub}>
+                {connected
+                  ? `Streaming 3D perspective from ${camDef.displayName} (Legacy)`
+                  : 'Start Virtual Asimov with ./run_sim.sh --web'}
+              </Text>
+              {connected && <ActivityIndicator color="#00e5ff" size="large" style={{ marginTop: 14 }} />}
+            </View>
+          )}
+        </>
       )}
 
       {/* Fullscreen Cyber Vignette / Corner Accents */}
@@ -255,7 +311,7 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
               <Text style={styles.camText}>{camDef.displayName}</Text>
             </View>
             <View style={styles.fpsBadge}>
-              <Text style={styles.fpsText}>{fps > 0 ? `${fps} FPS` : 'LIVE'}</Text>
+              <Text style={styles.fpsText}>{transportMode === 'WEBRTC' ? 'WEBRTC 60' : `${fps} FPS`}</Text>
             </View>
             <Text style={styles.simTimeText}>
               {connected ? `SIM: ${formatSimTime(simTime)}` : 'SIM: OFFLINE'}
@@ -264,14 +320,14 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
 
           <View style={styles.overlayFooter}>
             <Text style={styles.footerText}>
-              {connected ? `MuJoCo: ${camDef.simCameraName} (Double-Buffered)` : 'No Signal'}
+              {connected ? `MuJoCo: ${camDef.simCameraName} (${transportMode})` : 'No Signal'}
             </Text>
           </View>
         </>
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   wrapper: {

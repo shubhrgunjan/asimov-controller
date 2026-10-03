@@ -187,6 +187,9 @@ export const ConnectScreen: React.FC<ConnectScreenProps> = ({
               • Make sure phone & PC are on the same Wi-Fi. Start sim with{' '}
               <Text style={styles.cyan}>./run_sim.sh --web</Text>
             </Text>
+            <Text style={[styles.infoBullet, { marginTop: 4, color: '#00e5ff' }]}>
+              • WebRTC H.264 60 FPS video & low-latency binary telemetry enabled.
+            </Text>
           </View>
         </View>
       </View>

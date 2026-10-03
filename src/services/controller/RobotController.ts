@@ -6,6 +6,7 @@
 import { RestClient } from '../transport/RestClient';
 import { WebSocketClient } from '../transport/WebSocketClient';
 import { CameraService } from '../camera/CameraService';
+import { BinaryProtocol } from '../transport/BinaryProtocol';
 import { CommandAck, RobotControllerInterface } from '../../types/controller';
 import { TIMING_CONFIG } from '../../config';
 
@@ -13,6 +14,9 @@ export class RobotController implements RobotControllerInterface {
   public restClient: RestClient;
   public wsClient: WebSocketClient;
   public cameraService: CameraService;
+
+  private commandSeq: number = 0;
+  private binarySender: ((bytes: Uint8Array) => boolean) | null = null;
 
   private targetVx: number = 0.0;
   private targetVy: number = 0.0;
@@ -173,13 +177,50 @@ export class RobotController implements RobotControllerInterface {
     }
   }
 
+  public setBinarySender(sender: ((bytes: Uint8Array) => boolean) | null): void {
+    this.binarySender = sender;
+  }
+
   private async dispatchCommand(action: string, params: Record<string, unknown> = {}): Promise<CommandAck> {
-    // If WebSocket is actively connected, send over fast channel
+    this.commandSeq = (this.commandSeq + 1) & 0xffffffff;
+    const binaryPacket = BinaryProtocol.packControl(this.commandSeq, action, params);
+
+    // 1. If WebRTC binary sender is attached (DataChannel), transmit with 0 queuing delay
+    if (this.binarySender) {
+      try {
+        const sent = this.binarySender(binaryPacket);
+        if (sent) {
+          return {
+            commandId: this.commandSeq,
+            action,
+            timestamp: Date.now() / 1000,
+            simTime: 0,
+            status: 'pending',
+          };
+        }
+      } catch {
+        // Fall through
+      }
+    }
+
+    // 2. If WebSocket is actively connected, send binary packet over fast channel
     if (this.wsClient.isConnected()) {
+      const sentBinary = this.wsClient.sendBinary(binaryPacket);
+      if (sentBinary) {
+        return {
+          commandId: this.commandSeq,
+          action,
+          timestamp: Date.now() / 1000,
+          simTime: 0,
+          status: 'pending',
+        };
+      }
+
+      // Fallback to JSON over WS
       const sent = this.wsClient.sendCommand(action, params);
       if (sent) {
         return {
-          commandId: 0,
+          commandId: this.commandSeq,
           action,
           timestamp: Date.now() / 1000,
           simTime: 0,
@@ -188,7 +229,7 @@ export class RobotController implements RobotControllerInterface {
       }
     }
 
-    // Fallback to HTTP REST
+    // 3. Fallback to HTTP REST
     const ack = await this.restClient.sendCommand(action, params);
     this.handleAck(ack);
     return ack;

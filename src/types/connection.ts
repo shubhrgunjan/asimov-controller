@@ -29,3 +29,18 @@ export interface ConnectionStats {
   reconnectAttempts: number;
   lastError: string | null;
 }
+
+export type TransportMode = 'WEBRTC' | 'LEGACY';
+export type LatencyMode = 'LOW_LATENCY' | 'BALANCED' | 'QUALITY';
+
+export interface WebRTCStats {
+  fps: number;
+  bitrateKbps: number;
+  rttMs: number;
+  packetLoss: number;
+  jitterMs: number;
+  width: number;
+  height: number;
+  droppedFrames: number;
+  mode: LatencyMode;
+}
