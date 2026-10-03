@@ -35,11 +35,16 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
 
   const camDef = CAMERA_DEFINITIONS[cameraMode];
   const isMountedRef = useRef<boolean>(true);
-  const loadingLayerRef = useRef<'A' | 'B'>('A');
+  const activeLayerRef = useRef<'A' | 'B'>('A');
   const frameCountRef = useRef<number>(0);
   const fpsTimerRef = useRef<any>(null);
   const watchdogTimerRef = useRef<any>(null);
   const nextFrameTimerRef = useRef<any>(null);
+
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
+  const getSnapshotUrlRef = useRef(getSnapshotUrl);
+  getSnapshotUrlRef.current = getSnapshotUrl;
 
   // Clear timers helper
   const clearAllTimers = useCallback(() => {
@@ -53,21 +58,17 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
     }
   }, []);
 
-  // Request the next frame sequentially into the background buffer
-  const requestNextFrame = useCallback(
-    (delayMs: number = 35) => {
+  // Request next frame into the specified background layer
+  const loadIntoTargetLayer = useCallback(
+    (targetLayer: 'A' | 'B', delayMs: number = 40) => {
       clearAllTimers();
 
-      if (!connected || !isMountedRef.current) return;
+      if (!connectedRef.current || !isMountedRef.current) return;
 
       nextFrameTimerRef.current = setTimeout(() => {
-        if (!connected || !isMountedRef.current) return;
+        if (!connectedRef.current || !isMountedRef.current) return;
 
-        // Current active layer stays visible; next frame loads into the OTHER layer
-        const targetLayer = activeLayer === 'A' ? 'B' : 'A';
-        loadingLayerRef.current = targetLayer;
-
-        const nextUrl = getSnapshotUrl(Date.now());
+        const nextUrl = getSnapshotUrlRef.current(Date.now());
 
         if (targetLayer === 'A') {
           setFrameA(nextUrl);
@@ -75,15 +76,15 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
           setFrameB(nextUrl);
         }
 
-        // Safety watchdog: if the background frame takes > 750ms to load, retry
+        // Safety watchdog: if the background frame takes > 1200ms to load, retry
         watchdogTimerRef.current = setTimeout(() => {
-          if (isMountedRef.current && connected) {
-            requestNextFrame(50);
+          if (isMountedRef.current && connectedRef.current) {
+            loadIntoTargetLayer(targetLayer, 100);
           }
-        }, 750);
+        }, 1200);
       }, delayMs);
     },
-    [activeLayer, connected, getSnapshotUrl, clearAllTimers]
+    [clearAllTimers]
   );
 
   // Handle successful image load event on Layer A
@@ -97,12 +98,13 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
     setHasReceivedFirstFrame(true);
     frameCountRef.current += 1;
 
-    // Layer A is now ready -> make it active!
+    // Layer A has completed loading -> switch active layer to A
+    activeLayerRef.current = 'A';
     setActiveLayer('A');
 
-    // Pace next frame load smoothly (~24-28 FPS)
-    requestNextFrame(35);
-  }, [requestNextFrame]);
+    // Load next frame into Layer B (background)
+    loadIntoTargetLayer('B', 40);
+  }, [loadIntoTargetLayer]);
 
   // Handle successful image load event on Layer B
   const handleLoadB = useCallback(() => {
@@ -115,24 +117,32 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
     setHasReceivedFirstFrame(true);
     frameCountRef.current += 1;
 
-    // Layer B is now ready -> make it active!
+    // Layer B has completed loading -> switch active layer to B
+    activeLayerRef.current = 'B';
     setActiveLayer('B');
 
-    // Pace next frame load smoothly (~24-28 FPS)
-    requestNextFrame(35);
-  }, [requestNextFrame]);
+    // Load next frame into Layer A (background)
+    loadIntoTargetLayer('A', 40);
+  }, [loadIntoTargetLayer]);
 
-  // Handle error without clearing the current visible frame (never flash black)
-  const handleError = useCallback(() => {
+  // Handle errors: retry into the current target layer without flipping or clearing the active layer
+  const handleErrorA = useCallback(() => {
     if (!isMountedRef.current) return;
     if (watchdogTimerRef.current) {
       clearTimeout(watchdogTimerRef.current);
       watchdogTimerRef.current = null;
     }
+    loadIntoTargetLayer('A', 150);
+  }, [loadIntoTargetLayer]);
 
-    // Don't flip active layer; quietly retry after brief backoff
-    requestNextFrame(100);
-  }, [requestNextFrame]);
+  const handleErrorB = useCallback(() => {
+    if (!isMountedRef.current) return;
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+    loadIntoTargetLayer('B', 150);
+  }, [loadIntoTargetLayer]);
 
   // Track FPS calculation every second
   useEffect(() => {
@@ -162,7 +172,8 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
     }
 
     // Start initial frame fetch into Layer A
-    loadingLayerRef.current = 'A';
+    activeLayerRef.current = 'A';
+    setActiveLayer('A');
     setFrameA(getSnapshotUrl(Date.now()));
 
     return () => {
@@ -185,8 +196,9 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
             },
           ]}
           resizeMode={fullScreen ? 'cover' : 'contain'}
+          fadeDuration={0}
           onLoad={handleLoadA}
-          onError={handleError}
+          onError={handleErrorA}
         />
       ) : null}
 
@@ -202,8 +214,9 @@ export const RobotViewport: React.FC<RobotViewportProps> = ({
             },
           ]}
           resizeMode={fullScreen ? 'cover' : 'contain'}
+          fadeDuration={0}
           onLoad={handleLoadB}
-          onError={handleError}
+          onError={handleErrorB}
         />
       ) : null}
 

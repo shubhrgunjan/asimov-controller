@@ -42,32 +42,47 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
 }) => {
   const [knobOffset, setKnobOffset] = useState({ x: 0, y: 0 });
   const [isActive, setIsActive] = useState(false);
-  const touchStartRef = useRef({ x: 0, y: 0 });
+
+  // Dynamic refs to avoid stale closures in PanResponder
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+
+  const onReleaseRef = useRef(onRelease);
+  onReleaseRef.current = onRelease;
+
+  const radiusRef = useRef(radius);
+  radiusRef.current = radius;
+
+  const deadzoneRef = useRef(deadzone);
+  deadzoneRef.current = deadzone;
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !disabled,
-      onMoveShouldSetPanResponder: () => !disabled,
+      onStartShouldSetPanResponder: () => !disabledRef.current,
+      onStartShouldSetPanResponderCapture: () => !disabledRef.current,
+      onMoveShouldSetPanResponder: () => !disabledRef.current,
+      onMoveShouldSetPanResponderCapture: () => !disabledRef.current,
+      onPanResponderTerminationRequest: () => false,
 
-      onPanResponderGrant: (evt: GestureResponderEvent) => {
-        if (disabled) return;
+      onPanResponderGrant: () => {
+        if (disabledRef.current) return;
         setIsActive(true);
-        touchStartRef.current = {
-          x: evt.nativeEvent.pageX,
-          y: evt.nativeEvent.pageY,
-        };
       },
 
       onPanResponderMove: (_evt: GestureResponderEvent, gestureState: PanResponderGestureState) => {
-        if (disabled) return;
+        if (disabledRef.current) return;
         const dx = gestureState.dx;
         const dy = gestureState.dy;
+        const currentRadius = radiusRef.current;
 
-        const norm = normalizeJoystickInput(dx, dy, radius, deadzone);
+        const norm = normalizeJoystickInput(dx, dy, currentRadius, deadzoneRef.current);
 
         // Clamped visual knob position
         const dist = Math.hypot(dx, dy);
-        const visualClampedDist = Math.min(dist, radius);
+        const visualClampedDist = Math.min(dist, currentRadius);
         const angle = Math.atan2(dy, dx);
 
         const visualX = Math.cos(angle) * visualClampedDist;
@@ -76,19 +91,19 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
         setKnobOffset({ x: visualX, y: visualY });
 
         // Emit normalized values [-1.0, 1.0]
-        onMove(norm.x, norm.y);
+        onMoveRef.current(norm.x, norm.y);
       },
 
       onPanResponderRelease: () => {
         setIsActive(false);
         setKnobOffset({ x: 0, y: 0 });
-        onRelease();
+        onReleaseRef.current();
       },
 
       onPanResponderTerminate: () => {
         setIsActive(false);
         setKnobOffset({ x: 0, y: 0 });
-        onRelease();
+        onReleaseRef.current();
       },
     })
   ).current;
@@ -114,29 +129,30 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
         {...panResponder.panHandlers}
       >
         {/* Subtle crosshair guide lines */}
-        <View style={[styles.crosshairX, { width: baseSize - 24 }]} />
-        <View style={[styles.crosshairY, { height: baseSize - 24 }]} />
+        <View pointerEvents="none" style={[styles.crosshairX, { width: baseSize - 24 }]} />
+        <View pointerEvents="none" style={[styles.crosshairY, { height: baseSize - 24 }]} />
 
         {/* Directional markers */}
         {mode === 'movement' ? (
-          <>
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <Text style={[styles.markerText, styles.markerTop, { color: activeColor + 'aa' }]}>▲</Text>
             <Text style={[styles.markerText, styles.markerBottom, { color: activeColor + 'aa' }]}>▼</Text>
             <Text style={[styles.markerText, styles.markerLeft, { color: activeColor + 'aa' }]}>◄</Text>
             <Text style={[styles.markerText, styles.markerRight, { color: activeColor + 'aa' }]}>►</Text>
-          </>
+          </View>
         ) : (
-          <>
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <Text style={[styles.markerText, styles.markerLeft, { color: activeColor + 'cc', fontSize: 13 }]}>⟲</Text>
             <Text style={[styles.markerText, styles.markerRight, { color: activeColor + 'cc', fontSize: 13 }]}>⟳</Text>
-          </>
+          </View>
         )}
 
         {/* Center resting dot */}
-        <View style={[styles.centerDot, { backgroundColor: activeColor + '55' }]} />
+        <View pointerEvents="none" style={[styles.centerDot, { backgroundColor: activeColor + '55' }]} />
 
         {/* Movable thumb knob */}
         <View
+          pointerEvents="none"
           style={[
             styles.knob,
             {
@@ -152,12 +168,12 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
             },
           ]}
         >
-          <View style={styles.knobInnerGrip} />
+          <View pointerEvents="none" style={styles.knobInnerGrip} />
         </View>
       </View>
 
       {/* Label and Live readout badge */}
-      <View style={styles.labelRow}>
+      <View pointerEvents="none" style={styles.labelRow}>
         <Text style={[styles.axisLabel, { color: activeColor }]}>{label}</Text>
         {subLabel ? <Text style={styles.subLabel}>{subLabel}</Text> : null}
       </View>

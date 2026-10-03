@@ -12,7 +12,7 @@ export const APP_CONFIG = {
 
 export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
   // Defaults to the host machine's Wi-Fi LAN IP for physical device testing
-  host: '10.155.49.132',
+  host: '10.10.186.186',
   httpPort: 8852,
   wsPort: 8854,
   autoReconnect: true,
@@ -25,9 +25,10 @@ export const DEFAULT_CONNECTION_CONFIG: ConnectionConfig = {
  * Common quick-connect presets for developer convenience
  */
 export const CONNECTION_PRESETS = [
-  { label: 'Wi-Fi LAN (10.155.49.132)', host: '10.155.49.132' },
+  { label: 'Wi-Fi (GALGOTIAS-ARUBA 10.10.186.186)', host: '10.10.186.186' },
+  { label: 'Ethernet LAN (10.10.186.8)', host: '10.10.186.8' },
+  { label: 'USB / Localhost (127.0.0.1)', host: '127.0.0.1' },
   { label: 'Android Emulator (10.0.2.2)', host: '10.0.2.2' },
-  { label: 'Localhost (Web)', host: '127.0.0.1' },
 ];
 
 /**
