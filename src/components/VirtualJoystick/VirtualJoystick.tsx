@@ -110,10 +110,9 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
 
   const baseSize = radius * 2;
   const knobSize = knobRadius * 2;
-  const activeColor = disabled ? '#3b4258' : color;
 
   return (
-    <View style={[styles.container, { width: baseSize, height: baseSize + 28 }]}>
+    <View style={[styles.container, { width: baseSize, height: baseSize + 24 }]}>
       {/* Outer base track */}
       <View
         style={[
@@ -122,33 +121,14 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
             width: baseSize,
             height: baseSize,
             borderRadius: radius,
-            borderColor: isActive ? activeColor : activeColor + '44',
-            backgroundColor: isActive ? '#0d132299' : '#0a0d1688',
+            borderColor: isActive ? 'rgba(255, 255, 255, 0.35)' : 'rgba(255, 255, 255, 0.15)',
+            backgroundColor: isActive ? 'rgba(24, 24, 27, 0.85)' : 'rgba(24, 24, 27, 0.65)',
           },
         ]}
         {...panResponder.panHandlers}
       >
-        {/* Subtle crosshair guide lines */}
-        <View pointerEvents="none" style={[styles.crosshairX, { width: baseSize - 24 }]} />
-        <View pointerEvents="none" style={[styles.crosshairY, { height: baseSize - 24 }]} />
-
-        {/* Directional markers */}
-        {mode === 'movement' ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <Text style={[styles.markerText, styles.markerTop, { color: activeColor + 'aa' }]}>▲</Text>
-            <Text style={[styles.markerText, styles.markerBottom, { color: activeColor + 'aa' }]}>▼</Text>
-            <Text style={[styles.markerText, styles.markerLeft, { color: activeColor + 'aa' }]}>◄</Text>
-            <Text style={[styles.markerText, styles.markerRight, { color: activeColor + 'aa' }]}>►</Text>
-          </View>
-        ) : (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <Text style={[styles.markerText, styles.markerLeft, { color: activeColor + 'cc', fontSize: 13 }]}>⟲</Text>
-            <Text style={[styles.markerText, styles.markerRight, { color: activeColor + 'cc', fontSize: 13 }]}>⟳</Text>
-          </View>
-        )}
-
-        {/* Center resting dot */}
-        <View pointerEvents="none" style={[styles.centerDot, { backgroundColor: activeColor + '55' }]} />
+        {/* Subtle center deadzone marker */}
+        <View pointerEvents="none" style={styles.centerDot} />
 
         {/* Movable thumb knob */}
         <View
@@ -160,11 +140,7 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
               height: knobSize,
               borderRadius: knobRadius,
               transform: [{ translateX: knobOffset.x }, { translateY: knobOffset.y }],
-              backgroundColor: disabled ? '#3b4258' : activeColor,
-              shadowColor: activeColor,
-              shadowOpacity: isActive ? 0.9 : 0.4,
-              shadowRadius: isActive ? 12 : 6,
-              borderColor: '#ffffff55',
+              backgroundColor: disabled ? '#3f3f46' : isActive ? '#f4f4f5' : '#e4e4e7',
             },
           ]}
         >
@@ -174,7 +150,7 @@ export const VirtualJoystick: React.FC<VirtualJoystickProps> = ({
 
       {/* Label and Live readout badge */}
       <View pointerEvents="none" style={styles.labelRow}>
-        <Text style={[styles.axisLabel, { color: activeColor }]}>{label}</Text>
+        <Text style={styles.axisLabel}>{label}</Text>
         {subLabel ? <Text style={styles.subLabel}>{subLabel}</Text> : null}
       </View>
     </View>
@@ -187,62 +163,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   outerRing: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  crosshairX: {
-    position: 'absolute',
-    height: 1,
-    backgroundColor: '#ffffff1a',
-  },
-  crosshairY: {
-    position: 'absolute',
-    width: 1,
-    backgroundColor: '#ffffff1a',
-  },
-  markerText: {
-    position: 'absolute',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  markerTop: {
-    top: 6,
-  },
-  markerBottom: {
-    bottom: 6,
-  },
-  markerLeft: {
-    left: 8,
-  },
-  markerRight: {
-    right: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
   },
   centerDot: {
     position: 'absolute',
     width: 6,
     height: 6,
     borderRadius: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   knob: {
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.6)',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 6,
   },
   knobInnerGrip: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#0a0d14cc',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#71717a',
   },
   labelRow: {
     marginTop: 6,
@@ -251,18 +205,19 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   axisLabel: {
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1.2,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#d4d4d8',
+    letterSpacing: 0.4,
   },
   subLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    fontFamily: 'monospace',
-    color: '#a0a8c2',
-    backgroundColor: '#0d101a99',
-    paddingHorizontal: 4,
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#a1a1aa',
+    backgroundColor: 'rgba(24, 24, 27, 0.8)',
+    paddingHorizontal: 5,
     paddingVertical: 1,
-    borderRadius: 3,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
 });

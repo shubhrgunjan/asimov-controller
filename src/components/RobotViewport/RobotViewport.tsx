@@ -292,15 +292,6 @@ export const RobotViewport = forwardRef<RobotViewportRef, RobotViewportProps>(({
         </>
       )}
 
-      {/* Fullscreen Cyber Vignette / Corner Accents */}
-      {fullScreen && (
-        <View style={styles.vignetteOverlay} pointerEvents="none">
-          <View style={[styles.cornerBracket, styles.topLeftBracket]} />
-          <View style={[styles.cornerBracket, styles.topRightBracket]} />
-          <View style={[styles.cornerBracket, styles.bottomLeftBracket]} />
-          <View style={[styles.cornerBracket, styles.bottomRightBracket]} />
-        </View>
-      )}
 
       {/* Optional In-Viewport HUD (for inline mode or diagnostics) */}
       {showHudOverlay && (

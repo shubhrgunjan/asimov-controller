@@ -1,7 +1,7 @@
 /**
  * Asimov Controller - Mobile Gaming Landscape Controller Screen
- * Immersive full-screen camera viewport with dual-stick gaming teleoperation,
- * floating glassmorphism telemetry HUD, and tactile arcade action buttons.
+ * Immersive full-screen camera viewport with sleek dual-stick gaming teleoperation,
+ * minimalist status bar, and crystal-clear tactile action controls.
  */
 
 import React, { useState, useRef } from 'react';
@@ -18,8 +18,7 @@ import { useRobotStore } from '../state/useRobotStore';
 import { RobotViewport, RobotViewportRef } from '../components/RobotViewport/RobotViewport';
 import { VirtualJoystick } from '../components/VirtualJoystick/VirtualJoystick';
 import { DebugNetworkModal } from '../components/DebugModal/DebugNetworkModal';
-import { CameraMode, CAMERA_DEFINITIONS } from '../types/camera';
-import { TransportMode, LatencyMode } from '../types/connection';
+import { CameraMode } from '../types/camera';
 import { formatSimTime } from '../utils/formatting';
 
 export interface ControllerScreenProps {
@@ -50,10 +49,9 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
     connect,
     disconnect,
     stand,
-    damp,
     stop,
-    fall,
     getup,
+    fall,
     reset,
     setTwinStickPosition,
     switchCamera,
@@ -65,6 +63,7 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
 
   const [activeActionLoading, setActiveActionLoading] = useState<string | null>(null);
   const [isDebugModalVisible, setIsDebugModalVisible] = useState<boolean>(false);
+  const [isTelemetryDrawerOpen, setIsTelemetryDrawerOpen] = useState<boolean>(false);
   const viewportRef = useRef<RobotViewportRef>(null);
 
   // Twin-stick touch tracking references for simultaneous 2-thumb input
@@ -112,6 +111,16 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
     }
   };
 
+  const toggleSpeed = () => {
+    if (speedMultiplier <= 0.6) {
+      setSpeedMultiplier(1.0);
+    } else if (speedMultiplier <= 1.1) {
+      setSpeedMultiplier(1.5);
+    } else {
+      setSpeedMultiplier(0.5);
+    }
+  };
+
   const isConnected = connectionState === 'CONNECTED';
   const camModes: CameraMode[] = ['THIRD', 'FIRST', 'SECOND'];
 
@@ -125,9 +134,17 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
   };
 
   const currentModeColor = modeColors[telemetry.mode] || '#00e5ff';
+  const modeDisplayName =
+    telemetry.mode === 'MOVE'
+      ? 'WALKING'
+      : telemetry.mode === 'STAND'
+      ? 'READY'
+      : telemetry.mode;
 
   return (
     <View style={styles.container}>
+      <StatusBar hidden={true} />
+
       {/* 1. IMMERSIVE FULL-SCREEN CAMERA BACKGROUND */}
       <RobotViewport
         ref={viewportRef}
@@ -146,9 +163,9 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
         onTransportFallback={() => setTransportMode('LEGACY')}
       />
 
-      {/* 2. TOP FLOATING GLASSMORPHISM HUD */}
+      {/* 2. TOP FLOATING MINIMALIST GLASS HUD */}
       <View style={styles.topHudBar}>
-        {/* Left: Settings, Connection & Diagnostics */}
+        {/* Left: Connection Pill & Settings */}
         <View style={styles.topLeftGroup}>
           <TouchableOpacity
             style={styles.settingsIconButton}
@@ -166,88 +183,47 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
               ]}
             />
             <Text style={styles.connHostText} numberOfLines={1}>
-              {config.host}
+              {isConnected ? 'ONLINE' : 'OFFLINE'}
             </Text>
             {isConnected && (
-              <Text style={styles.connPingText}>{latencyMs > 0 ? `${latencyMs}ms` : '30Hz'}</Text>
+              <Text style={styles.connPingText}>
+                {latencyMs > 0 ? `${latencyMs}ms` : '60FPS'}
+              </Text>
             )}
           </View>
+        </View>
 
-          {/* Realtime Engineering Telemetry Diagnostic Pill */}
+        {/* Center: Clean Robot Status & Battery */}
+        <View style={styles.topCenterGroup}>
+          <View style={[styles.statusBadge, { borderColor: currentModeColor + '66' }]}>
+            <View style={[styles.statusGlowDot, { backgroundColor: currentModeColor }]} />
+            <Text style={[styles.statusText, { color: currentModeColor }]}>
+              {modeDisplayName}
+            </Text>
+          </View>
+
+          <View style={styles.batteryBadge}>
+            <Text style={styles.batteryIcon}>⚡</Text>
+            <Text style={styles.batteryText}>
+              {telemetry.battery.socPercent.toFixed(0)}%
+            </Text>
+          </View>
+
           <TouchableOpacity
-            style={styles.diagPill}
+            style={[
+              styles.telemetryToggleBtn,
+              isTelemetryDrawerOpen && styles.telemetryToggleBtnActive,
+            ]}
+            onPress={() => setIsTelemetryDrawerOpen(!isTelemetryDrawerOpen)}
             activeOpacity={0.7}
-            onPress={() => setIsDebugModalVisible(true)}
           >
-            <View
-              style={[
-                styles.diagDot,
-                { backgroundColor: transportMode === 'WEBRTC' ? '#00e5ff' : '#ffb300' },
-              ]}
-            />
-            <Text style={styles.diagText}>
-              {transportMode === 'WEBRTC'
-                ? `${webrtcStats.fps || 60}FPS H.264`
-                : 'LEGACY 25FPS'}
+            <Text style={styles.telemetryToggleText}>
+              {isTelemetryDrawerOpen ? 'HIDE DATA' : 'TELEMETRY'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Center: Live Telemetry Badges */}
-        <View style={styles.topCenterGroup}>
-          {/* Robot State Badge */}
-          <View style={[styles.telemetryBadge, { borderColor: currentModeColor + '88' }]}>
-            <Text style={[styles.modeLabel, { color: currentModeColor }]}>
-              {telemetry.mode}
-            </Text>
-            {telemetry.submode !== 'NONE' && (
-              <Text style={styles.submodeLabel}>{telemetry.submode}</Text>
-            )}
-          </View>
-
-          {/* Sim Time */}
-          <View style={styles.telemetryBadge}>
-            <Text style={styles.hudMetricLabel}>SIM</Text>
-            <Text style={styles.simTimeText}>{formatSimTime(telemetry.simTime)}</Text>
-          </View>
-
-          {/* Base Height */}
-          <View style={styles.telemetryBadge}>
-            <Text style={styles.hudMetricLabel}>ALT</Text>
-            <Text style={styles.metricValText}>{telemetry.base.position.z.toFixed(2)}m</Text>
-          </View>
-
-          {/* Foot Contacts */}
-          <View style={styles.telemetryBadge}>
-            <Text style={styles.hudMetricLabel}>FEET</Text>
-            <View style={styles.contactsRow}>
-              <View
-                style={[
-                  styles.footDot,
-                  telemetry.contacts.leftFoot && styles.footDotActive,
-                ]}
-              >
-                <Text style={styles.footText}>L</Text>
-              </View>
-              <View
-                style={[
-                  styles.footDot,
-                  telemetry.contacts.rightFoot && styles.footDotActive,
-                ]}
-              >
-                <Text style={styles.footText}>R</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Battery */}
-          <View style={styles.telemetryBadge}>
-            <Text style={styles.hudMetricLabel}>⚡</Text>
-            <Text style={styles.battText}>{telemetry.battery.socPercent.toFixed(0)}%</Text>
-          </View>
-        </View>
-
-        {/* Right: Quick Camera View Switcher & Disconnect */}
+        {/* Right: Camera Switcher Tabs & Disconnect */}
         <View style={styles.topRightGroup}>
           <View style={styles.cameraTabsContainer}>
             {camModes.map((mode) => {
@@ -289,181 +265,152 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
         </View>
       </View>
 
-      {/* 3. DUAL-STICK GAMING TELEOP OVERLAY */}
-      <View style={styles.controlsOverlay} pointerEvents="box-none">
-        {/* ── LEFT CONTROLLER: MOVEMENT JOYSTICK & SPEED GEARS ── */}
-        <View style={styles.leftControllerZone} pointerEvents="box-none">
-          {/* Speed Multiplier Selector */}
-          <View style={styles.speedGearsRow}>
-            {[0.5, 1.0, 1.5].map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.gearPill, speedMultiplier === s && styles.gearPillActive]}
-                onPress={() => setSpeedMultiplier(s)}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.gearPillText, speedMultiplier === s && styles.gearPillTextActive]}>
-                  {s === 0.5 ? 'SLOW' : s === 1.0 ? '1.0x' : 'TURBO'}
-                </Text>
-              </TouchableOpacity>
-            ))}
+      {/* 3. OPTIONAL EXPANDABLE TELEMETRY HUD DRAWER */}
+      {isTelemetryDrawerOpen && (
+        <View style={styles.telemetryDrawer}>
+          <View style={styles.drawerItem}>
+            <Text style={styles.drawerLabel}>ALTITUDE</Text>
+            <Text style={styles.drawerValue}>{telemetry.base.position.z.toFixed(2)}m</Text>
           </View>
+          <View style={styles.drawerItem}>
+            <Text style={styles.drawerLabel}>FEET (L/R)</Text>
+            <Text style={styles.drawerValue}>
+              {telemetry.contacts.leftFoot ? '●' : '○'} /{' '}
+              {telemetry.contacts.rightFoot ? '●' : '○'}
+            </Text>
+          </View>
+          <View style={styles.drawerItem}>
+            <Text style={styles.drawerLabel}>VELOCITY</Text>
+            <Text style={styles.drawerValue}>
+              {telemetry.base.linearVelocityBody.x.toFixed(2)} m/s
+            </Text>
+          </View>
+          <View style={styles.drawerItem}>
+            <Text style={styles.drawerLabel}>SIM TIME</Text>
+            <Text style={styles.drawerValue}>{formatSimTime(telemetry.simTime)}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.diagButton}
+            onPress={() => setIsDebugModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.diagButtonText}>NET DIAG</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-          {/* Left Movement Thumbstick */}
+      {/* 4. DUAL-STICK GAMING TELEOP OVERLAY */}
+      <View style={styles.controlsOverlay} pointerEvents="box-none">
+        {/* ── LEFT CONTROLLER: MOVEMENT JOYSTICK & SPEED TOGGLE ── */}
+        <View style={styles.leftControllerZone} pointerEvents="box-none">
+          <TouchableOpacity
+            style={styles.speedToggleBtn}
+            onPress={toggleSpeed}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.speedToggleText}>
+              Speed: {speedMultiplier === 0.5 ? '0.5x' : speedMultiplier === 1.0 ? '1.0x' : '1.5x'}
+            </Text>
+          </TouchableOpacity>
+
           <VirtualJoystick
             radius={64}
             knobRadius={26}
-            color="#00e5ff"
-            label="MOVE"
+            color="#a1a1aa"
+            label="Move"
             mode="movement"
-            subLabel={`vx: ${commandedVelocity.vx >= 0 ? '+' : ''}${commandedVelocity.vx.toFixed(2)}`}
+            subLabel={
+              Math.abs(commandedVelocity.vx) > 0.01
+                ? `${commandedVelocity.vx >= 0 ? '+' : ''}${commandedVelocity.vx.toFixed(2)} m/s`
+                : undefined
+            }
             disabled={!isConnected}
             onMove={handleLeftMove}
             onRelease={handleLeftRelease}
           />
         </View>
 
-        {/* ── CENTER HUD: COMMAND LIFECYCLE ACK TOAST ── */}
-        <View style={styles.centerHudZone} pointerEvents="none">
+        {/* ── CENTER CONTROLLER: 3 PRIMARY ACTION CAPSULES ── */}
+        <View style={styles.centerActionZone} pointerEvents="box-none">
+          {/* Subtle Acknowledgement Toast */}
           {lastError ? (
-            <View style={styles.ackToastError}>
-              <Text style={styles.ackToastTitle}>⚠️ REJECTED</Text>
-              <Text style={styles.ackToastSub} numberOfLines={1}>
-                {lastError}
-              </Text>
+            <View style={styles.toastError}>
+              <Text style={styles.toastTextError}>⚠️ {lastError}</Text>
             </View>
-          ) : lastAck ? (
-            <View style={styles.ackToastSuccess}>
-              <Text style={styles.ackToastTitle}>
+          ) : lastAck && lastAck.action !== 'walk' ? (
+            <View style={styles.toastSuccess}>
+              <Text style={styles.toastTextSuccess}>
                 ✓ {lastAck.action.toUpperCase()}
-              </Text>
-              <Text style={styles.ackToastSub} numberOfLines={1}>
-                {lastAck.lifecycle?.applied || 'Command applied'}
               </Text>
             </View>
           ) : null}
+
+          <View style={styles.actionCapsulesRow} pointerEvents="box-none">
+            {/* STAND BUTTON */}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.btnStand]}
+              disabled={!isConnected || activeActionLoading === 'stand'}
+              onPress={() => handleAction('stand', stand)}
+              activeOpacity={0.7}
+            >
+              {activeActionLoading === 'stand' ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.btnStandTitle}>Stand</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* STOP BUTTON */}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.btnStop]}
+              disabled={!isConnected || activeActionLoading === 'stop'}
+              onPress={() => handleAction('stop', stop)}
+              activeOpacity={0.7}
+            >
+              {activeActionLoading === 'stop' ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.btnStopTitle}>Stop</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* RECOVER BUTTON */}
+            <TouchableOpacity
+              style={[styles.actionBtn, styles.btnRecover]}
+              disabled={!isConnected || activeActionLoading === 'recover'}
+              onPress={() => handleAction('recover', getup)}
+              activeOpacity={0.7}
+            >
+              {activeActionLoading === 'recover' ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={styles.btnRecoverTitle}>Recover</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* ── RIGHT CONTROLLER: STEERING STICK & ARCADE ACTION DIAMOND ── */}
+        {/* ── RIGHT CONTROLLER: STEERING STICK ── */}
         <View style={styles.rightControllerZone} pointerEvents="box-none">
-          {/* Secondary Utility Triggers (Top) */}
-          <View style={styles.utilityRow}>
-            <TouchableOpacity
-              style={[styles.utilityBtn, styles.safefallBtn]}
-              disabled={!isConnected || activeActionLoading === 'fall'}
-              onPress={() => handleAction('fall', fall)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.safefallBtnText}>
-                {activeActionLoading === 'fall' ? '...' : 'SAFE FALL'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.utilityBtn, styles.resetBtn]}
-              disabled={!isConnected || activeActionLoading === 'reset'}
-              onPress={() => handleAction('reset', reset)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.resetBtnText}>
-                {activeActionLoading === 'reset' ? '...' : 'RESET SIM'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.rightControlsRow} pointerEvents="box-none">
-            {/* Right Steering Stick (Yaw Turn wz) */}
-            <View style={styles.turnStickWrapper}>
-              <VirtualJoystick
-                radius={58}
-                knobRadius={24}
-                color="#b388ff"
-                label="STEER"
-                mode="steering"
-                subLabel={`wz: ${commandedVelocity.wz >= 0 ? '+' : ''}${commandedVelocity.wz.toFixed(2)}`}
-                disabled={!isConnected}
-                onMove={handleRightMove}
-                onRelease={handleRightRelease}
-              />
-            </View>
-
-            {/* Game Action Buttons Diamond Cluster */}
-            <View style={styles.actionDiamondPad}>
-              {/* TOP: STAND (Arm & Balance) */}
-              <TouchableOpacity
-                style={[styles.diamondBtn, styles.btnStand]}
-                disabled={!isConnected || activeActionLoading === 'stand'}
-                onPress={() => handleAction('stand', stand)}
-                activeOpacity={0.6}
-              >
-                {activeActionLoading === 'stand' ? (
-                  <ActivityIndicator size="small" color="#00e5ff" />
-                ) : (
-                  <>
-                    <Text style={styles.diamondBtnTitleCyan}>STAND</Text>
-                    <Text style={styles.diamondBtnSubCyan}>BALANCE</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-
-              <View style={styles.diamondMidRow}>
-                {/* LEFT: DAMP (Compliant Limp) */}
-                <TouchableOpacity
-                  style={[styles.diamondBtn, styles.btnDamp]}
-                  disabled={!isConnected || activeActionLoading === 'damp'}
-                  onPress={() => handleAction('damp', damp)}
-                  activeOpacity={0.6}
-                >
-                  {activeActionLoading === 'damp' ? (
-                    <ActivityIndicator size="small" color="#ffb300" />
-                  ) : (
-                    <>
-                      <Text style={styles.diamondBtnTitleAmber}>DAMP</Text>
-                      <Text style={styles.diamondBtnSubAmber}>PARK</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {/* RIGHT: STOP (Zero Velocity Brake) */}
-                <TouchableOpacity
-                  style={[styles.diamondBtn, styles.btnStop]}
-                  disabled={!isConnected || activeActionLoading === 'stop'}
-                  onPress={() => handleAction('stop', stop)}
-                  activeOpacity={0.6}
-                >
-                  {activeActionLoading === 'stop' ? (
-                    <ActivityIndicator size="small" color="#ff1744" />
-                  ) : (
-                    <>
-                      <Text style={styles.diamondBtnTitleRed}>STOP</Text>
-                      <Text style={styles.diamondBtnSubRed}>BRAKE</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              {/* BOTTOM: GET UP (Recover Stance) */}
-              <TouchableOpacity
-                style={[styles.diamondBtn, styles.btnGetup]}
-                disabled={!isConnected || activeActionLoading === 'getup'}
-                onPress={() => handleAction('getup', getup)}
-                activeOpacity={0.6}
-              >
-                {activeActionLoading === 'getup' ? (
-                  <ActivityIndicator size="small" color="#00e676" />
-                ) : (
-                  <>
-                    <Text style={styles.diamondBtnTitleGreen}>GET UP</Text>
-                    <Text style={styles.diamondBtnSubGreen}>RECOVER</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
+          <VirtualJoystick
+            radius={64}
+            knobRadius={26}
+            color="#a1a1aa"
+            label="Steer"
+            mode="steering"
+            subLabel={
+              Math.abs(commandedVelocity.wz) > 0.01
+                ? `${commandedVelocity.wz >= 0 ? '+' : ''}${commandedVelocity.wz.toFixed(2)} rad/s`
+                : undefined
+            }
+            disabled={!isConnected}
+            onMove={handleRightMove}
+            onRelease={handleRightRelease}
+          />
         </View>
       </View>
 
-      {/* 4. ENGINEERING DIAGNOSTICS & NETWORK MODAL */}
+      {/* 5. DIAGNOSTICS & TELEMETRY MODAL */}
       <DebugNetworkModal
         visible={isDebugModalVisible}
         onClose={() => setIsDebugModalVisible(false)}
@@ -475,12 +422,13 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
         host={config.host}
         httpPort={config.httpPort}
         wsPort={config.wsPort}
-        onToggleTransport={() => {
-          setTransportMode(transportMode === 'WEBRTC' ? 'LEGACY' : 'WEBRTC');
-        }}
+        onToggleTransport={() =>
+          setTransportMode(transportMode === 'WEBRTC' ? 'LEGACY' : 'WEBRTC')
+        }
         onChangeLatencyMode={setLatencyMode}
         onForceReconnect={() => {
-          disconnect().then(() => connect());
+          disconnect();
+          connect();
         }}
       />
     </View>
@@ -490,55 +438,27 @@ export const ControllerScreen: React.FC<ControllerScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#05070c',
-    position: 'relative',
+    backgroundColor: '#02040a',
   },
 
-  diagPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#070b14',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 229, 255, 0.35)',
-    gap: 6,
-  },
-  diagDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  diagText: {
-    color: '#00e5ff',
-    fontSize: 10,
-    fontWeight: '700',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    letterSpacing: 0.5,
-  },
-
-  /* ── TOP HUD ── */
+  /* ── TOP HUD BAR ── */
   topHudBar: {
     position: 'absolute',
-    top: Platform.OS === 'android' ? 8 : 12,
-    left: 14,
-    right: 14,
+    top: Platform.OS === 'ios' ? 12 : 8,
+    left: 16,
+    right: 16,
     height: 44,
-    zIndex: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#0a0d18cc',
-    borderRadius: 10,
+    zIndex: 20,
+    backgroundColor: 'rgba(24, 24, 27, 0.85)',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1f263e',
-    paddingHorizontal: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 12,
   },
+
   topLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -547,10 +467,8 @@ const styles = StyleSheet.create({
   settingsIconButton: {
     width: 32,
     height: 32,
-    borderRadius: 6,
-    backgroundColor: '#161c2d',
-    borderWidth: 1,
-    borderColor: '#29334e',
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -561,12 +479,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#121726',
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
     paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#232b42',
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   connDot: {
     width: 7,
@@ -574,93 +490,85 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   connHostText: {
-    color: '#cdd3e8',
-    fontSize: 10,
+    color: '#e2e8f0',
+    fontSize: 11,
     fontWeight: '700',
-    fontFamily: 'monospace',
-    maxWidth: 100,
+    letterSpacing: 0.5,
   },
   connPingText: {
-    color: '#00e5ff',
-    fontSize: 9,
-    fontWeight: '800',
-    fontFamily: 'monospace',
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '600',
+    marginLeft: 2,
   },
 
+  /* Center Group */
   topCenterGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
-  telemetryBadge: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#111624',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#232b42',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  modeLabel: {
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 0.8,
-  },
-  submodeLabel: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: '#8b94b0',
-    backgroundColor: '#1b2234',
-    paddingHorizontal: 4,
-    paddingVertical: 1,
+  statusGlowDot: {
+    width: 6,
+    height: 6,
     borderRadius: 3,
   },
-  hudMetricLabel: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#656d8a',
+  statusText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#e4e4e7',
+    letterSpacing: 0.5,
   },
-  simTimeText: {
-    color: '#00e5ff',
-    fontSize: 10,
-    fontWeight: '800',
-    fontFamily: 'monospace',
-  },
-  metricValText: {
-    color: '#dbe0f0',
-    fontSize: 10,
-    fontWeight: '800',
-    fontFamily: 'monospace',
-  },
-  contactsRow: {
+  batteryBadge: {
     flexDirection: 'row',
-    gap: 3,
-  },
-  footDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: '#1b2030',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
-  footDotActive: {
-    backgroundColor: '#00e676',
+  batteryIcon: {
+    fontSize: 11,
+    color: '#10b981',
   },
-  footText: {
-    fontSize: 7,
-    fontWeight: '900',
-    color: '#080a10',
+  batteryText: {
+    color: '#e4e4e7',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  battText: {
-    color: '#00e676',
+  telemetryToggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  telemetryToggleBtnActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  telemetryToggleText: {
+    color: '#a1a1aa',
     fontSize: 10,
-    fontWeight: '800',
-    fontFamily: 'monospace',
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
+  /* Right Group */
   topRightGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -668,274 +576,221 @@ const styles = StyleSheet.create({
   },
   cameraTabsContainer: {
     flexDirection: 'row',
-    backgroundColor: '#121726',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#232b42',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 8,
     padding: 2,
     gap: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   camTab: {
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 6,
   },
   camTabActive: {
-    backgroundColor: '#00e5ff24',
-    borderWidth: 1,
-    borderColor: '#00e5ff',
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
   camTabText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#707998',
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#71717a',
+    letterSpacing: 0.3,
   },
   camTabTextActive: {
-    color: '#00e5ff',
+    color: '#ffffff',
   },
   disconnectButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: '#ff336620',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
     borderWidth: 1,
-    borderColor: '#ff3366',
+    borderColor: 'rgba(239, 68, 68, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   disconnectText: {
-    color: '#ff3366',
-    fontSize: 11,
-    fontWeight: '900',
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '600',
   },
   connectQuickBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 6,
-    backgroundColor: '#00e5ff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
   },
   connectQuickText: {
-    color: '#07090f',
-    fontSize: 10,
-    fontWeight: '900',
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  /* ── EXPANDABLE TELEMETRY DRAWER ── */
+  telemetryDrawer: {
+    position: 'absolute',
+    top: 60,
+    left: '20%',
+    right: '20%',
+    backgroundColor: 'rgba(8, 12, 22, 0.88)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    zIndex: 19,
+  },
+  drawerItem: {
+    alignItems: 'center',
+  },
+  drawerLabel: {
+    color: '#64748b',
+    fontSize: 9,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  drawerValue: {
+    color: '#e2e8f0',
+    fontSize: 12,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  diagButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0, 229, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 229, 255, 0.3)',
+  },
+  diagButtonText: {
+    color: '#00e5ff',
+    fontSize: 9,
+    fontWeight: '800',
   },
 
   /* ── CONTROLS OVERLAY ── */
   controlsOverlay: {
     position: 'absolute',
     top: 56,
-    left: 12,
-    right: 12,
-    bottom: 12,
+    left: 20,
+    right: 20,
+    bottom: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
     zIndex: 15,
   },
 
-  /* Left Zone (Movement Stick & Gear Toggle) */
+  /* Left Zone */
   leftControllerZone: {
     alignItems: 'center',
     gap: 8,
   },
-  speedGearsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#0b0f1bcc',
-    padding: 3,
-    borderRadius: 6,
+  speedToggleBtn: {
+    backgroundColor: 'rgba(24, 24, 27, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#212a42',
-    gap: 4,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  gearPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  gearPillActive: {
-    backgroundColor: '#00e5ff22',
-    borderWidth: 1,
-    borderColor: '#00e5ff',
-  },
-  gearPillText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#656e8c',
-  },
-  gearPillTextActive: {
-    color: '#00e5ff',
+  speedToggleText: {
+    color: '#e4e4e7',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
-  /* Center Zone (Ack Toast) */
-  centerHudZone: {
+  /* Center Zone (Action Bar & Toast) */
+  centerActionZone: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingBottom: 8,
+    paddingBottom: 4,
+    gap: 8,
   },
-  ackToastSuccess: {
-    backgroundColor: '#081a17dd',
+  toastSuccess: {
+    backgroundColor: 'rgba(0, 230, 118, 0.15)',
     borderWidth: 1,
-    borderColor: '#00e67688',
-    borderRadius: 6,
+    borderColor: 'rgba(0, 230, 118, 0.4)',
+    borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    alignItems: 'center',
   },
-  ackToastError: {
-    backgroundColor: '#200810dd',
-    borderWidth: 1,
-    borderColor: '#ff336688',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    alignItems: 'center',
-  },
-  ackToastTitle: {
-    fontSize: 9,
-    fontWeight: '900',
-    color: '#dbe0f0',
-  },
-  ackToastSub: {
-    fontSize: 8,
-    color: '#8b94b0',
-    marginTop: 1,
-  },
-
-  /* Right Zone (Steering Stick + Action Diamond) */
-  rightControllerZone: {
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  utilityRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 4,
-  },
-  utilityBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 5,
-    borderWidth: 1,
-  },
-  safefallBtn: {
-    backgroundColor: '#1b1d28cc',
-    borderColor: '#42485e',
-  },
-  safefallBtnText: {
-    color: '#a0a8c2',
-    fontSize: 8,
+  toastTextSuccess: {
+    color: '#00e676',
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  resetBtn: {
-    backgroundColor: '#241a2ecc',
-    borderColor: '#7843a6',
+  toastError: {
+    backgroundColor: 'rgba(255, 51, 102, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 51, 102, 0.4)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
   },
-  resetBtnText: {
-    color: '#d4a4ff',
-    fontSize: 8,
+  toastTextError: {
+    color: '#ff3366',
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  rightControlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  turnStickWrapper: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 
-  /* Action Buttons Diamond */
-  actionDiamondPad: {
-    width: 146,
-    height: 146,
-    position: 'relative',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  diamondMidRow: {
-    width: '100%',
+  actionCapsulesRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(24, 24, 27, 0.85)',
+    padding: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  diamondBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 2,
+  actionBtn: {
+    width: 74,
+    height: 40,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 8,
   },
   btnStand: {
-    backgroundColor: '#00e5ff1c',
-    borderColor: '#00e5ff',
-    shadowColor: '#00e5ff',
+    backgroundColor: '#2563eb',
   },
-  diamondBtnTitleCyan: {
-    color: '#00e5ff',
-    fontSize: 10,
-    fontWeight: '900',
+  btnStandTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
-  diamondBtnSubCyan: {
-    color: '#00e5ffaa',
-    fontSize: 7,
-    fontWeight: '700',
-  },
-
-  btnDamp: {
-    backgroundColor: '#ffb3001c',
-    borderColor: '#ffb300',
-    shadowColor: '#ffb300',
-  },
-  diamondBtnTitleAmber: {
-    color: '#ffb300',
-    fontSize: 10,
-    fontWeight: '900',
-  },
-  diamondBtnSubAmber: {
-    color: '#ffb300aa',
-    fontSize: 7,
-    fontWeight: '700',
-  },
-
   btnStop: {
-    backgroundColor: '#ff174426',
-    borderColor: '#ff1744',
-    shadowColor: '#ff1744',
+    backgroundColor: '#dc2626',
   },
-  diamondBtnTitleRed: {
-    color: '#ff1744',
-    fontSize: 10,
-    fontWeight: '900',
+  btnStopTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
-  diamondBtnSubRed: {
-    color: '#ff1744aa',
-    fontSize: 7,
-    fontWeight: '700',
+  btnRecover: {
+    backgroundColor: '#4b5563',
+  },
+  btnRecoverTitle: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
-  btnGetup: {
-    backgroundColor: '#00e6761c',
-    borderColor: '#00e676',
-    shadowColor: '#00e676',
-  },
-  diamondBtnTitleGreen: {
-    color: '#00e676',
-    fontSize: 9,
-    fontWeight: '900',
-  },
-  diamondBtnSubGreen: {
-    color: '#00e676aa',
-    fontSize: 7,
-    fontWeight: '700',
+  /* Right Zone */
+  rightControllerZone: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
 });

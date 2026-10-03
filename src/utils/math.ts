@@ -119,10 +119,14 @@ export function mapTwinStickToVelocity(
     rawVx = -moveY * limits.VX_MIN * mult;
   }
 
-  // Strafe: moveX > 0 is strafe right (+vy), moveX < 0 is strafe left (-vy)
-  const rawVy = moveX * limits.VY_MAX * mult;
+  // Strafe: In MuJoCo/IsaacLab robot frame, +vy is Left and -vy is Right.
+  // When user drags stick right (moveX > 0), command negative vy (right).
+  // When user drags stick left (moveX < 0), command positive vy (left).
+  const rawVy = -moveX * limits.VY_MAX * mult;
 
-  // Yaw: turnX > 0 is turn right (-wz CW), turnX < 0 is turn left (+wz CCW)
+  // Yaw: In robot frame, +wz is CCW (turn left) and -wz is CW (turn right).
+  // When user drags stick right (turnX > 0), command negative wz (turn right).
+  // When user drags stick left (turnX < 0), command positive wz (turn left).
   const rawWz = -turnX * limits.WZ_MAX * mult;
 
   return {

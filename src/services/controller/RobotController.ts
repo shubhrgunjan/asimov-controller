@@ -185,38 +185,18 @@ export class RobotController implements RobotControllerInterface {
     this.commandSeq = (this.commandSeq + 1) & 0xffffffff;
     const binaryPacket = BinaryProtocol.packControl(this.commandSeq, action, params);
 
-    // 1. If WebRTC binary sender is attached (DataChannel), transmit with 0 queuing delay
+    // 1. Also forward over WebRTC DataChannel if attached
     if (this.binarySender) {
       try {
-        const sent = this.binarySender(binaryPacket);
-        if (sent) {
-          return {
-            commandId: this.commandSeq,
-            action,
-            timestamp: Date.now() / 1000,
-            simTime: 0,
-            status: 'pending',
-          };
-        }
+        this.binarySender(binaryPacket);
       } catch {
-        // Fall through
+        // Safe ignore
       }
     }
 
-    // 2. If WebSocket is actively connected, send binary packet over fast channel
+    // 2. Direct fast WebSocket transport (reliable low-latency connection)
     if (this.wsClient.isConnected()) {
-      const sentBinary = this.wsClient.sendBinary(binaryPacket);
-      if (sentBinary) {
-        return {
-          commandId: this.commandSeq,
-          action,
-          timestamp: Date.now() / 1000,
-          simTime: 0,
-          status: 'pending',
-        };
-      }
-
-      // Fallback to JSON over WS
+      this.wsClient.sendBinary(binaryPacket);
       const sent = this.wsClient.sendCommand(action, params);
       if (sent) {
         return {
